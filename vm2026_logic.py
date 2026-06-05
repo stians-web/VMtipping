@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import Dict, List, Optional
 import pandas as pd
 
-SCHEMA_VERSION = "2026-06-05-v4"
+SCHEMA_VERSION = "2026-06-05-v5-spotify"
 POINTS_EXACT_SCORE = 3
 POINTS_OUTCOME = 1
 POINTS_CHAMPION = 5
@@ -24,7 +24,6 @@ GROUPS: Dict[str, List[str]] = {
     "K": ["Portugal", "Congo DR", "Uzbekistan", "Colombia"],
     "L": ["England", "Croatia", "Ghana", "Panama"],
 }
-
 PAIRINGS_IDX = [(0, 1), (2, 3), (3, 1), (0, 2), (3, 0), (1, 2)]
 ROUND_OF_32 = [
     (73, "2A", "2B"), (74, "1E", "3A/B/C/D/F"), (75, "1F", "2C"), (76, "1C", "2F"),
@@ -42,8 +41,6 @@ NEXT_ROUNDS = {
 }
 PHASE_ORDER = ["16-delsfinaler", "Åttedelsfinaler", "Kvartfinaler", "Semifinaler", "Bronsefinale", "Finale"]
 
-# Styrker er omtrentlige markedsstyrker basert på offentlig tilgjengelige outright-odds per 4.-5. juni 2026.
-# Lavere outright odds gir høyere styrke. Resten er konservativt satt lavt.
 TEAM_STRENGTH = {
     "Spain": 0.175, "France": 0.169, "England": 0.128, "Portugal": 0.098, "Brazil": 0.098,
     "Argentina": 0.096, "Germany": 0.064, "Netherlands": 0.047, "Norway": 0.030, "Belgium": 0.025,
@@ -58,9 +55,7 @@ TEAM_STRENGTH = {
     "Haiti": 0.0012, "Curaçao": 0.0010, "Cabo Verde": 0.0010,
 }
 
-
-def now_iso() -> str:
-    return datetime.now().isoformat(timespec="seconds")
+def now_iso() -> str: return datetime.now().isoformat(timespec="seconds")
 
 def build_group_matches() -> List[dict]:
     matches, n = [], 1
@@ -81,8 +76,7 @@ def normalize_score(obj: Optional[dict]) -> dict:
     obj = obj or {}
     return {"team_a": obj.get("team_a", ""), "team_b": obj.get("team_b", ""), "goals_a": obj.get("goals_a", obj.get("home")), "goals_b": obj.get("goals_b", obj.get("away")), "winner": obj.get("winner", "")}
 
-def get_outcome(a: int, b: int) -> str:
-    return "H" if a > b else "B" if b > a else "U"
+def get_outcome(a: int, b: int) -> str: return "H" if a > b else "B" if b > a else "U"
 
 def winner_from_score(team_a: str, team_b: str, goals_a, goals_b, manual_winner: str = "") -> str:
     if goals_a is None or goals_b is None: return ""
@@ -91,40 +85,27 @@ def winner_from_score(team_a: str, team_b: str, goals_a, goals_b, manual_winner:
     if goals_b > goals_a: return team_b
     return manual_winner if manual_winner in [team_a, team_b] else ""
 
-def strength(team: str) -> float:
-    return TEAM_STRENGTH.get(team, 0.001)
+def strength(team: str) -> float: return TEAM_STRENGTH.get(team, 0.001)
 
 def poisson(lam: float, rng: random.Random) -> int:
-    # Knuth sampler, dependency-free.
-    lam = max(0.05, min(lam, 4.5))
-    L, k, p = math.exp(-lam), 0, 1.0
+    lam = max(0.05, min(lam, 4.5)); L, k, p = math.exp(-lam), 0, 1.0
     while p > L:
-        k += 1
-        p *= rng.random()
+        k += 1; p *= rng.random()
     return k - 1
 
 def expected_goals(team_a: str, team_b: str, knockout: bool = False) -> tuple[float, float]:
     sa, sb = strength(team_a), strength(team_b)
     diff = math.log((sa + 0.002) / (sb + 0.002))
     base = 1.18 if not knockout else 1.08
-    # Stronger teams get a gentle xG lift, underdogs still have upset chance.
-    la = base + 0.32 * diff
-    lb = base - 0.32 * diff
-    return max(0.25, min(3.2, la)), max(0.25, min(3.2, lb))
+    return max(0.25, min(3.2, base + 0.32 * diff)), max(0.25, min(3.2, base - 0.32 * diff))
 
-def random_score(team_a: str, team_b: str, rng: random.Random, knockout: bool = False, allow_draw: bool = True) -> dict:
+def random_score(team_a: str, team_b: str, rng: random.Random, knockout: bool = False) -> dict:
     la, lb = expected_goals(team_a, team_b, knockout)
     ga, gb = poisson(la, rng), poisson(lb, rng)
     winner = winner_from_score(team_a, team_b, ga, gb, "")
     if knockout and ga == gb:
-        # behold resultatet uavgjort, men velg hvem som går videre basert på styrke
         pa = strength(team_a) / (strength(team_a) + strength(team_b) + 1e-9)
         winner = team_a if rng.random() < pa else team_b
-    elif not allow_draw and ga == gb:
-        pa = strength(team_a) / (strength(team_a) + strength(team_b) + 1e-9)
-        if rng.random() < pa: ga += 1
-        else: gb += 1
-        winner = winner_from_score(team_a, team_b, ga, gb, "")
     return {"team_a": team_a, "team_b": team_b, "goals_a": int(ga), "goals_b": int(gb), "winner": winner}
 
 def group_table(group: str, scores: dict) -> pd.DataFrame:
@@ -165,14 +146,14 @@ def slot_allowed_map() -> Dict[str, List[str]]:
     return out
 
 def find_third_slot_assignment(advancing_groups: List[str], allowed: Dict[str, List[str]]) -> Dict[str, str]:
-    slots = list(allowed.keys())
-    slots_sorted, assign, used = sorted(slots, key=lambda s: len([g for g in allowed[s] if g in advancing_groups])), {}, set()
+    slots = list(allowed.keys()); slots_sorted = sorted(slots, key=lambda s: len([g for g in allowed[s] if g in advancing_groups]))
+    assign, used = {}, set()
     def backtrack(i: int) -> bool:
         if i == len(slots_sorted): return True
         slot = slots_sorted[i]
         for g in [x for x in allowed[slot] if x in advancing_groups and x not in used]:
             assign[slot] = g; used.add(g)
-            if backtrack(i+1): return True
+            if backtrack(i + 1): return True
             used.remove(g); assign.pop(slot, None)
         return False
     backtrack(0)
@@ -207,24 +188,20 @@ def compute_bracket(group_scores: dict, third_slot_overrides: dict, knockout_sco
 
 def fill_try_luck(data: dict, knockout_key: str = "knockout_predictions", seed: Optional[int] = None) -> dict:
     rng = random.Random(seed if seed is not None else random.SystemRandom().randint(1, 10**12))
-    participant = data.get("participant", "")
-    kind = data.get("type", "participant_prediction")
-    data.clear()
-    data.update(new_actual_results() if knockout_key == "knockout_results" else new_prediction(participant))
+    participant = data.get("participant", ""); kind = data.get("type", "participant_prediction")
+    data.clear(); data.update(new_actual_results() if knockout_key == "knockout_results" else new_prediction(participant))
     data["type"] = kind
     if participant: data["participant"] = participant
     for m in GROUP_MATCHES:
-        data["group_scores"][str(m["match_no"])] = random_score(m["team_a"], m["team_b"], rng, knockout=False, allow_draw=True)
+        data["group_scores"][str(m["match_no"])] = random_score(m["team_a"], m["team_b"], rng, knockout=False)
     data["third_slot_overrides"] = {}
-    # fyll knockout runde for runde, fordi neste runde avhenger av vinnerne.
     for phase in PHASE_ORDER:
         bracket = compute_bracket(data["group_scores"], data["third_slot_overrides"], data[knockout_key])
         for no, m in sorted([(no, x) for no, x in bracket.items() if x["phase"] == phase]):
             if m["team_a"] and m["team_b"]:
-                data[knockout_key][str(no)] = random_score(m["team_a"], m["team_b"], rng, knockout=True, allow_draw=True)
+                data[knockout_key][str(no)] = random_score(m["team_a"], m["team_b"], rng, knockout=True)
     bracket = compute_bracket(data["group_scores"], data["third_slot_overrides"], data[knockout_key])
-    data["champion"] = bracket.get(104, {}).get("winner", "")
-    data["updated_at"] = now_iso()
+    data["champion"] = bracket.get(104, {}).get("winner", ""); data["updated_at"] = now_iso()
     return data
 
 def all_matches_for_scoring(data: dict, actual: bool = False) -> Dict[str, dict]:

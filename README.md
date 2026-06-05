@@ -1,21 +1,21 @@
 
-# VM 2026 tippekonkurranse – Streamlit v4
+# VM 2026 tippekonkurranse – v5 Spotify
 
-Ny funksjon: **Prøv lykken!**
+Dette er en ren, GitHub-klar pakke. Ingen patchfiler trengs.
 
-Knappen fyller ut hele tippekupongen automatisk:
+## Filer
 
-- gruppespillresultater
-- gruppetabeller
-- 16-delsfinaler
-- åttedelsfinaler
-- kvartfinaler
-- semifinaler
-- bronsefinale
-- finale
-- mester
+- `app.py`
+- `vm2026_logic.py`
+- `requirements.txt`
+- `README.md`
 
-Forslagene er randomiserte, men vektet etter omtrentlige odds/styrker fra offentlige oddsoversikter. Derfor får du ulike resultater hver gang du trykker.
+## Funksjoner
+
+- Prøv lykken! fyller ut hele tippekupongen med randomiserte, oddsvektede tips.
+- Spotify-spilleren for `6z5sjLABC6XkNviIYeFUqF` vises etter Prøv lykken.
+- Deltakere kan laste ned JSON.
+- Admin kan laste opp JSON-filer og beregne ledertabell.
 
 ## Kjøring
 
@@ -24,10 +24,8 @@ pip install -r requirements.txt
 streamlit run app.py
 ```
 
-## Viktig
+## Streamlit Cloud
 
-Dette er laget for en sosial tippekonkurranse. Det er ikke bettingråd.
+Legg alle fire filene i repo-root eller samme mappe, og sett main file path til `app.py`.
 
-## JSON-import
-
-v4 beholder fiksen fra v3: ved import av JSON tømmes gamle widget-keys, intern ui-versjon økes, og appen rerunner slik at importerte verdier vises.
+Merk: Spotify embed autoplay er normalt blokkert av nettleser/Spotify. Brukeren må vanligvis trykke Play i spilleren.

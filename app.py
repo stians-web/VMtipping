@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 import pandas as pd
 import streamlit as st
+import streamlit.components.v1 as components
 from vm2026_logic import (
     GROUPS, GROUP_MATCHES, PHASE_ORDER, POINTS_EXACT_SCORE, POINTS_OUTCOME, POINTS_CHAMPION,
     new_prediction, new_actual_results, qualifiers, compute_bracket, slot_allowed_map,
@@ -13,7 +14,13 @@ from vm2026_logic import (
 
 st.set_page_config(page_title="VM 2026 tipping", layout="wide")
 st.title("VM 2026 tippekonkurranse")
-st.caption("v4: Prøv lykken! fyller ut hele kupongen med randomiserte oddstips.")
+st.caption("v5: Prøv lykken + Spotify-spiller integrert i én ren pakke.")
+
+SPOTIFY_EMBED_URL = "https://open.spotify.com/embed/track/6z5sjLABC6XkNviIYeFUqF?utm_source=generator"
+
+def show_spotify_player():
+    st.markdown("### 🎵 Prøv lykken-sang")
+    components.iframe(SPOTIFY_EMBED_URL, height=152, scrolling=False)
 
 DATA_DIR = Path("data"); DATA_DIR.mkdir(exist_ok=True)
 LOCAL_PARTICIPANT_FILE = DATA_DIR / "min_tippekupong.json"
@@ -29,7 +36,14 @@ def save_local(path: Path, data: dict) -> None:
     path.write_text(download_json(data), encoding="utf-8")
 
 def init_session():
-    for k, v in {"participant_data": load_local(LOCAL_PARTICIPANT_FILE, new_prediction("")), "actual_data": load_local(LOCAL_ACTUAL_FILE, new_actual_results()), "participant_ui_version": 0, "actual_ui_version": 0}.items():
+    defaults = {
+        "participant_data": load_local(LOCAL_PARTICIPANT_FILE, new_prediction("")),
+        "actual_data": load_local(LOCAL_ACTUAL_FILE, new_actual_results()),
+        "participant_ui_version": 0,
+        "actual_ui_version": 0,
+        "play_luck_song": False,
+    }
+    for k, v in defaults.items():
         if k not in st.session_state: st.session_state[k] = v
 
 def clear_widget_keys(prefix: str):
@@ -46,10 +60,10 @@ def import_box(label: str, target: str, key: str):
             st.session_state.participant_data = data; st.session_state.participant_ui_version += 1; clear_widget_keys("p_")
         else:
             st.session_state.actual_data = data; st.session_state.actual_ui_version += 1; clear_widget_keys("a_")
-        st.success(f"Importerte {uploaded.name}"); st.rerun()
+        st.rerun()
 
 def try_luck_button(label: str, target: str, key: str):
-    if st.button(label, key=key, type="primary", help="Fyller ut alle kamper basert på vektede odds/styrker. Gir nytt forslag hver gang."):
+    if st.button(label, key=key, type="primary"):
         if target == "participant":
             name = st.session_state.participant_data.get("participant", "")
             fill_try_luck(st.session_state.participant_data, "knockout_predictions")
@@ -58,6 +72,7 @@ def try_luck_button(label: str, target: str, key: str):
         else:
             fill_try_luck(st.session_state.actual_data, "knockout_results")
             st.session_state.actual_ui_version += 1; clear_widget_keys("a_")
+        st.session_state.play_luck_song = True
         st.toast("Prøv lykken er kjørt – ny kupong generert!")
         st.rerun()
 
@@ -116,18 +131,18 @@ def render_knockout_inputs(data: dict, key_name: str, prefix: str):
 
 def participant_mode():
     st.header("Deltaker: lag tippekupong")
-    st.info("Trykk **Prøv lykken!** for å fylle ut hele kupongen automatisk. Den bruker oddsbaserte styrker og litt tilfeldighet, så du får ikke samme kupong hver gang.")
     import_box("Last inn eksisterende JSON-tippekupong", "participant", "participant_import")
     data = st.session_state.participant_data; prefix = f"p_{st.session_state.participant_ui_version}"
     data["participant"] = st.text_input("Navn", value=data.get("participant", ""), key=f"{prefix}_name").strip()
     try_luck_button("Prøv lykken!", "participant", f"{prefix}_try_luck")
+    if st.session_state.get("play_luck_song", False): show_spotify_player()
     tab1,tab2,tab3,tab4 = st.tabs(["1 Gruppespill", "2 Tabeller", "3 Sluttspill", "4 Lagre/eksporter"])
     with tab1: render_group_inputs(data, "group_scores", prefix)
     with tab2: render_tables_and_slots(data, prefix)
     with tab3: render_knockout_inputs(data, "knockout_predictions", prefix)
     with tab4:
         if st.button("Lagre lokalt", key=f"{prefix}_save"): save_local(LOCAL_PARTICIPANT_FILE, data); st.success(f"Lagret til {LOCAL_PARTICIPANT_FILE}")
-        if st.button("Nullstill deltakerdata", key=f"{prefix}_reset"): st.session_state.participant_data = new_prediction(""); st.session_state.participant_ui_version += 1; clear_widget_keys("p_"); st.rerun()
+        if st.button("Nullstill deltakerdata", key=f"{prefix}_reset"): st.session_state.participant_data = new_prediction(""); st.session_state.participant_ui_version += 1; st.session_state.play_luck_song = False; clear_widget_keys("p_"); st.rerun()
         fname = f"tips_{data.get('participant','deltaker').replace(' ', '_')}.json"
         st.download_button("Last ned min JSON-tippekupong", download_json(data), fname, "application/json", key=f"{prefix}_download")
         st.json(data, expanded=False)
@@ -137,7 +152,7 @@ def admin_mode():
     import_box("Last inn fasit-JSON", "actual", "actual_import")
     actual = st.session_state.actual_data; prefix = f"a_{st.session_state.actual_ui_version}"
     with st.expander("Demo/test", expanded=False):
-        st.warning("Prøv lykken i adminmodus lager en fiktiv fasit for testing av leaderboard. Ikke bruk som ekte fasit.")
+        st.warning("Prøv lykken i adminmodus lager en fiktiv fasit for testing. Ikke bruk som ekte fasit.")
         try_luck_button("Prøv lykken! (demo-fasit)", "actual", f"{prefix}_try_luck_actual")
     tab1,tab2,tab3,tab4 = st.tabs(["1 Fasit gruppespill", "2 Fasit sluttspill", "3 Importer tips og ledertabell", "4 Eksporter fasit"])
     with tab1: render_group_inputs(actual, "group_scores", prefix); render_tables_and_slots(actual, prefix)
@@ -145,12 +160,11 @@ def admin_mode():
     with tab3:
         uploads = st.file_uploader("Last opp alle deltakernes JSON-filer", type="json", accept_multiple_files=True, key=f"{prefix}_participant_uploads")
         if uploads:
-            scored, details = [], {}
+            scored = []
             for up in uploads:
                 try:
                     pred = load_json_bytes(up); res = score_prediction(pred, actual)
                     scored.append({"Deltaker": res["participant"], "Kamppoeng": res["match_points"], "Mesterbonus": res["champion_bonus"], "Totalt": res["total"], "Mestertips": pred.get("champion", "")})
-                    details[res["participant"]] = res["details"]
                 except Exception as exc: st.error(f"Kunne ikke lese {up.name}: {exc}")
             if scored:
                 df = pd.DataFrame(scored).sort_values(["Totalt", "Kamppoeng"], ascending=[False, False]).reset_index(drop=True); df.insert(0,"Plass",range(1,len(df)+1))
@@ -168,5 +182,5 @@ st.sidebar.markdown("### Poeng")
 st.sidebar.write(f"Riktig resultat: {POINTS_EXACT_SCORE}")
 st.sidebar.write(f"Riktig utfall: {POINTS_OUTCOME}")
 st.sidebar.write(f"Mesterbonus: {POINTS_CHAMPION}")
-st.sidebar.caption("Dette er en tippekonkurranse-app, ikke bettingråd.")
+st.sidebar.caption("Spotify-spilleren vises etter Prøv lykken. Brukeren må normalt trykke Play selv.")
 participant_mode() if mode == "Deltaker" else admin_mode()
