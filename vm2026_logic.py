@@ -2,13 +2,14 @@
 from __future__ import annotations
 import json, random, math
 from datetime import datetime
-from typing import Dict, List, Optional
+from typing import Dict, List
 import pandas as pd
 
-SCHEMA_VERSION = "2026-06-05-v6-complete"
+SCHEMA_VERSION = "2026-06-12-v7-1-complete"
 POINTS_EXACT_SCORE = 3
 POINTS_OUTCOME = 1
 POINTS_CHAMPION = 5
+FINISHED_STATUS_CODES = {"FT", "AET", "PEN"}
 
 GROUPS: Dict[str, List[str]] = {
     "A": ["Mexico", "South Africa", "Korea Republic", "Czechia"],
@@ -41,21 +42,25 @@ NEXT_ROUNDS = {
 }
 PHASE_ORDER = ["16-delsfinaler", "Åttedelsfinaler", "Kvartfinaler", "Semifinaler", "Bronsefinale", "Finale"]
 TEAM_STRENGTH = {"Spain":.175,"France":.169,"England":.128,"Portugal":.098,"Brazil":.098,"Argentina":.096,"Germany":.064,"Netherlands":.047,"Norway":.030,"Belgium":.025,"Colombia":.024,"Japan":.020,"Uruguay":.015,"Morocco":.015,"USA":.015,"Switzerland":.012,"Türkiye":.012,"Mexico":.012,"Croatia":.012,"Senegal":.010,"Ecuador":.010,"Sweden":.008,"Canada":.007,"Paraguay":.007,"Austria":.007,"Scotland":.004,"Bosnia and Herzegovina":.004,"Czechia":.003,"Egypt":.003,"Côte d'Ivoire":.003,"Algeria":.0025,"Ghana":.0025,"Australia":.002,"Korea Republic":.002,"South Africa":.0015,"Qatar":.0015,"IR Iran":.0015,"Tunisia":.0015,"Congo DR":.0012,"Uzbekistan":.0012,"Panama":.0012,"Iraq":.0012,"Saudi Arabia":.0012,"New Zealand":.0012,"Jordan":.0012,"Haiti":.0012,"Curaçao":.001,"Cabo Verde":.001}
+TEAM_ALIASES = {"South Korea":"Korea Republic","Czech Republic":"Czechia","Turkey":"Türkiye","Turkiye":"Türkiye","Ivory Coast":"Côte d'Ivoire","Cote d'Ivoire":"Côte d'Ivoire","DR Congo":"Congo DR","Cape Verde":"Cabo Verde","Iran":"IR Iran","United States":"USA","U.S.A.":"USA","Bosnia & Herzegovina":"Bosnia and Herzegovina"}
 
 def now_iso(): return datetime.now().isoformat(timespec="seconds")
+def canonical_team(name): return TEAM_ALIASES.get((name or "").strip(), (name or "").strip())
 def build_group_matches():
     out=[]; n=1
     for g, teams in GROUPS.items():
         for a,b in PAIRINGS_IDX:
             out.append({"match_no":n,"phase":"Gruppespill","group":g,"team_a":teams[a],"team_b":teams[b]}); n+=1
     return out
-GROUP_MATCHES=build_group_matches()
+GROUP_MATCHES = build_group_matches()
+
 def new_prediction(participant=""):
     return {"schema_version":SCHEMA_VERSION,"type":"participant_prediction","participant":participant,"created_at":now_iso(),"updated_at":now_iso(),"group_scores":{},"third_slot_overrides":{},"knockout_predictions":{},"champion":""}
 def new_actual_results():
-    return {"schema_version":SCHEMA_VERSION,"type":"actual_results","updated_at":now_iso(),"group_scores":{},"third_slot_overrides":{},"knockout_results":{},"champion":""}
+    return {"schema_version":SCHEMA_VERSION,"type":"actual_results","updated_at":now_iso(),"group_scores":{},"third_slot_overrides":{},"knockout_results":{},"champion":"","api_last_updated":""}
 def normalize_score(obj):
-    obj=obj or {}; return {"team_a":obj.get("team_a",""),"team_b":obj.get("team_b",""),"goals_a":obj.get("goals_a",obj.get("home")),"goals_b":obj.get("goals_b",obj.get("away")),"winner":obj.get("winner","")}
+    obj=obj or {}
+    return {"team_a":obj.get("team_a",""),"team_b":obj.get("team_b",""),"goals_a":obj.get("goals_a",obj.get("home")),"goals_b":obj.get("goals_b",obj.get("away")),"winner":obj.get("winner",""),"played":bool(obj.get("played",False)),"date":obj.get("date",""),"status":obj.get("status",""),"api_fixture_id":obj.get("api_fixture_id")}
 def get_outcome(a,b): return "H" if a>b else "B" if b>a else "U"
 def winner_from_score(a,b,ga,gb,manual=""):
     if ga is None or gb is None: return ""
@@ -74,7 +79,8 @@ def random_score(a,b,rng,knockout=False):
     w=winner_from_score(a,b,ga,gb,"")
     if knockout and ga==gb:
         pa=strength(a)/(strength(a)+strength(b)+1e-9); w=a if rng.random()<pa else b
-    return {"team_a":a,"team_b":b,"goals_a":int(ga),"goals_b":int(gb),"winner":w}
+    return {"team_a":a,"team_b":b,"goals_a":int(ga),"goals_b":int(gb),"winner":w,"played":False}
+
 def group_table(g,scores):
     rows=[{"Lag":t,"Seed":i,"S":0,"V":0,"U":0,"T":0,"MF":0,"MM":0,"MS":0,"P":0} for i,t in enumerate(GROUPS[g],1)]
     tab=pd.DataFrame(rows).set_index("Lag")
@@ -89,6 +95,7 @@ def group_table(g,scores):
     tab["MS"]=tab["MF"]-tab["MM"]
     tab=tab.reset_index().sort_values(["P","MS","MF","Seed"],ascending=[False,False,False,True]).reset_index(drop=True)
     tab.insert(0,"Plass",range(1,len(tab)+1)); return tab
+
 def qualifiers(group_scores):
     tables={g:group_table(g,group_scores) for g in GROUPS}; winners={}; runners={}; thirds=[]
     for g,t in tables.items():
@@ -127,12 +134,12 @@ def compute_bracket(group_scores,over,ko):
     q=qualifiers(group_scores); br={}
     for no,sa,sb in ROUND_OF_32:
         a,b=resolve_seed(sa,q,over),resolve_seed(sb,q,over); s=normalize_score(ko.get(str(no)))
-        br[no]={"match_no":no,"phase":"16-delsfinaler","seed_a":sa,"seed_b":sb,"team_a":a,"team_b":b,"goals_a":s["goals_a"],"goals_b":s["goals_b"],"winner":winner_from_score(a,b,s["goals_a"],s["goals_b"],s["winner"])}
+        br[no]={"match_no":no,"phase":"16-delsfinaler","seed_a":sa,"seed_b":sb,"team_a":a,"team_b":b,"goals_a":s["goals_a"],"goals_b":s["goals_b"],"winner":winner_from_score(a,b,s["goals_a"],s["goals_b"],s["winner"]),"played":s["played"],"date":s["date"],"status":s["status"]}
     for phase,matches in NEXT_ROUNDS.items():
         for no,pa,pb in matches:
             a,b=(loser_of(br.get(pa,{})),loser_of(br.get(pb,{}))) if phase=="Bronsefinale" else (br.get(pa,{}).get("winner",""),br.get(pb,{}).get("winner",""))
             s=normalize_score(ko.get(str(no)))
-            br[no]={"match_no":no,"phase":phase,"seed_a":("T" if phase=="Bronsefinale" else "V")+str(pa),"seed_b":("T" if phase=="Bronsefinale" else "V")+str(pb),"team_a":a,"team_b":b,"goals_a":s["goals_a"],"goals_b":s["goals_b"],"winner":winner_from_score(a,b,s["goals_a"],s["goals_b"],s["winner"])}
+            br[no]={"match_no":no,"phase":phase,"seed_a":("T" if phase=="Bronsefinale" else "V")+str(pa),"seed_b":("T" if phase=="Bronsefinale" else "V")+str(pb),"team_a":a,"team_b":b,"goals_a":s["goals_a"],"goals_b":s["goals_b"],"winner":winner_from_score(a,b,s["goals_a"],s["goals_b"],s["winner"]),"played":s["played"],"date":s["date"],"status":s["status"]}
     return br
 def fill_try_luck(data,knockout_key="knockout_predictions",seed=None):
     rng=random.Random(seed if seed is not None else random.SystemRandom().randint(1,10**12)); participant=data.get("participant",""); kind=data.get("type","participant_prediction")
@@ -144,15 +151,17 @@ def fill_try_luck(data,knockout_key="knockout_predictions",seed=None):
         for no,m in sorted([(n,x) for n,x in br.items() if x["phase"]==phase]):
             if m["team_a"] and m["team_b"]: data[knockout_key][str(no)]=random_score(m["team_a"],m["team_b"],rng,True)
     data["champion"]=compute_bracket(data["group_scores"],data["third_slot_overrides"],data[knockout_key]).get(104,{}).get("winner",""); return data
+
 def all_matches_for_scoring(data,actual=False):
     ko_key="knockout_results" if actual else "knockout_predictions"; out={}; br=compute_bracket(data.get("group_scores",{}),data.get("third_slot_overrides",{}),data.get(ko_key,{}))
     for m in GROUP_MATCHES:
         key=str(m["match_no"]); s=normalize_score(data.get("group_scores",{}).get(key))
-        out[key]={"match_no":m["match_no"],"phase":"Gruppespill","team_a":m["team_a"],"team_b":m["team_b"],"goals_a":s["goals_a"],"goals_b":s["goals_b"],"winner":winner_from_score(m["team_a"],m["team_b"],s["goals_a"],s["goals_b"],s["winner"])}
+        out[key]={"match_no":m["match_no"],"phase":"Gruppespill","team_a":m["team_a"],"team_b":m["team_b"],"goals_a":s["goals_a"],"goals_b":s["goals_b"],"winner":winner_from_score(m["team_a"],m["team_b"],s["goals_a"],s["goals_b"],s["winner"]),"played":s["played"],"date":s["date"],"status":s["status"]}
     for no,m in br.items(): out[str(no)]=m
     return out
 def score_one_match(pred,act):
-    if not pred or not act or pred.get("goals_a") is None or pred.get("goals_b") is None or act.get("goals_a") is None or act.get("goals_b") is None: return 0
+    if not act or not act.get("played", False): return 0
+    if not pred or pred.get("goals_a") is None or pred.get("goals_b") is None or act.get("goals_a") is None or act.get("goals_b") is None: return 0
     pa,pb,aa,ab=pred.get("team_a",""),pred.get("team_b",""),act.get("team_a",""),act.get("team_b",""); pga,pgb,aga,agb=int(pred["goals_a"]),int(pred["goals_b"]),int(act["goals_a"]),int(act["goals_b"])
     if pa==aa and pb==ab: pass
     elif pa==ab and pb==aa: pga,pgb=pgb,pga
@@ -160,11 +169,32 @@ def score_one_match(pred,act):
     return POINTS_EXACT_SCORE if (pga,pgb)==(aga,agb) else POINTS_OUTCOME if get_outcome(pga,pgb)==get_outcome(aga,agb) else 0
 def format_score(m): return "" if not m or m.get("goals_a") is None or m.get("goals_b") is None else f"{m.get('goals_a')} - {m.get('goals_b')}"
 def score_prediction(prediction,actual_results):
-    pm,am=all_matches_for_scoring(prediction,False),all_matches_for_scoring(actual_results,True); rows=[]; total=0
+    pm,am=all_matches_for_scoring(prediction,False),all_matches_for_scoring(actual_results,True); rows=[]; total=0; corrected=0
     for no in range(1,105):
-        key=str(no); pts=score_one_match(pm.get(key,{}),am.get(key,{})); total+=pts
-        rows.append({"Kamp":no,"Fase":am.get(key,{}).get("phase",""),"Poeng":pts,"Pred lag":f"{pm.get(key,{}).get('team_a','')} - {pm.get(key,{}).get('team_b','')}","Pred resultat":format_score(pm.get(key,{})),"Fasit lag":f"{am.get(key,{}).get('team_a','')} - {am.get(key,{}).get('team_b','')}","Fasit resultat":format_score(am.get(key,{}))})
-    bonus=POINTS_CHAMPION if prediction.get("champion") and prediction.get("champion")==actual_results.get("champion") else 0
-    return {"participant":prediction.get("participant","Ukjent"),"match_points":total,"champion_bonus":bonus,"total":total+bonus,"details":rows}
+        key=str(no); act=am.get(key,{}); pts=score_one_match(pm.get(key,{}),act); total+=pts; corrected += 1 if act.get("played",False) else 0
+        rows.append({"Kamp":no,"Fase":act.get("phase",""),"Spilt":"Ja" if act.get("played",False) else "Nei","Poeng":pts,"Pred lag":f"{pm.get(key,{}).get('team_a','')} - {pm.get(key,{}).get('team_b','')}","Pred resultat":format_score(pm.get(key,{})),"Fasit lag":f"{act.get('team_a','')} - {act.get('team_b','')}","Fasit resultat":format_score(act),"Status":act.get("status","")})
+    bonus=POINTS_CHAMPION if actual_results.get("champion") and prediction.get("champion")==actual_results.get("champion") else 0
+    return {"participant":prediction.get("participant","Ukjent"),"match_points":total,"champion_bonus":bonus,"total":total+bonus,"corrected_matches":corrected,"details":rows}
 def load_json_bytes(uploaded_file): return json.loads(uploaded_file.getvalue().decode("utf-8"))
 def download_json(data): data=dict(data); data["updated_at"]=now_iso(); return json.dumps(data,ensure_ascii=False,indent=2)
+def apply_api_fixtures(actual, fixtures):
+    updated=0; skipped=0; all_app_matches={}
+    for m in GROUP_MATCHES: all_app_matches[(canonical_team(m["team_a"]), canonical_team(m["team_b"]))]=(str(m["match_no"]),"group_scores")
+    ko=compute_bracket(actual.get("group_scores",{}), actual.get("third_slot_overrides",{}), actual.get("knockout_results",{}))
+    for no,m in ko.items():
+        if m.get("team_a") and m.get("team_b"): all_app_matches[(canonical_team(m["team_a"]), canonical_team(m["team_b"]))]=(str(no),"knockout_results")
+    for fx in fixtures:
+        try:
+            f=fx.get("fixture",{}); teams=fx.get("teams",{}); goals=fx.get("goals",{})
+            home=canonical_team(teams.get("home",{}).get("name","")); away=canonical_team(teams.get("away",{}).get("name",""))
+            key=(home,away); rev=(away,home); match=all_app_matches.get(key) or all_app_matches.get(rev)
+            if not match: skipped+=1; continue
+            match_no,bucket=match; swapped = key not in all_app_matches and rev in all_app_matches
+            status=f.get("status",{}).get("short",""); played=status in FINISHED_STATUS_CODES
+            gh,ga=goals.get("home"),goals.get("away")
+            if swapped: gh,ga=ga,gh; home,away=away,home
+            obj={"team_a":home,"team_b":away,"goals_a":gh if played else None,"goals_b":ga if played else None,"played":played,"status":status,"date":f.get("date",""),"api_fixture_id":f.get("id"),"winner":""}
+            if played: obj["winner"]=winner_from_score(home,away,gh,ga,"")
+            actual.setdefault(bucket,{})[match_no]=obj; updated+=1
+        except Exception: skipped+=1
+    actual["api_last_updated"]=now_iso(); return {"updated":updated,"skipped":skipped}

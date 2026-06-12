@@ -3,13 +3,14 @@ from __future__ import annotations
 import json
 from pathlib import Path
 import pandas as pd
+import requests
 import streamlit as st
 import streamlit.components.v1 as components
 from vm2026_logic import *
 
 st.set_page_config(page_title="VM 2026 tipping", layout="wide")
 st.title("VM 2026 tippekonkurranse")
-st.caption("v6: Prøv lykken + Spotify + adminvisning av deltakernes valg")
+st.caption("v7.1: bare spilte kamper rettes + API-Football uten secrets-feil + Spotify")
 SPOTIFY_EMBED_URL="https://open.spotify.com/embed/track/6z5sjLABC6XkNviIYeFUqF?utm_source=generator"
 def show_spotify_player(): st.markdown("### 🎵 Prøv lykken-sang"); components.iframe(SPOTIFY_EMBED_URL,height=152,scrolling=False)
 DATA_DIR=Path("data"); DATA_DIR.mkdir(exist_ok=True)
@@ -20,6 +21,9 @@ def load_local(path,fallback):
         except Exception: return fallback
     return fallback
 def save_local(path,data): path.write_text(download_json(data),encoding="utf-8")
+def get_secret(name, default=""):
+    try: return st.secrets.get(name, default)
+    except Exception: return default
 def init_session():
     defaults={"participant_data":load_local(LOCAL_PARTICIPANT_FILE,new_prediction("")),"actual_data":load_local(LOCAL_ACTUAL_FILE,new_actual_results()),"participant_ui_version":0,"actual_ui_version":0,"play_luck_song":False}
     for k,v in defaults.items():
@@ -41,20 +45,26 @@ def try_luck_button(label,target,key):
         else:
             fill_try_luck(st.session_state.actual_data,"knockout_results"); st.session_state.actual_ui_version+=1; clear_widget_keys("a_")
         st.session_state.play_luck_song=True; st.toast("Prøv lykken er kjørt – ny kupong generert!"); st.rerun()
-def score_inputs(prefix,a,b,current,allow_draw_winner=False):
+def score_inputs(prefix,a,b,current,allow_draw_winner=False, actual_mode=False):
+    current=normalize_score(current); played=current.get("played",False)
+    if actual_mode: played=st.checkbox("Kamp ferdig/spilt",value=played,key=f"{prefix}_played")
     c1,c2,c3,c4=st.columns([4,1,1,4]); c1.markdown(f"**{a or 'TBD'}**")
     ga=c2.number_input("Mål A",0,30,0 if current.get("goals_a") is None else int(current.get("goals_a")),key=f"{prefix}_ga",label_visibility="collapsed")
     gb=c3.number_input("Mål B",0,30,0 if current.get("goals_b") is None else int(current.get("goals_b")),key=f"{prefix}_gb",label_visibility="collapsed"); c4.markdown(f"**{b or 'TBD'}**")
+    if actual_mode and not played: return {"team_a":a,"team_b":b,"goals_a":None,"goals_b":None,"winner":"","played":False,"date":current.get("date",""),"status":current.get("status","")}
     if allow_draw_winner and a and b and ga==gb:
         opts=["",a,b]; old=current.get("winner",""); w=st.selectbox("Vinner etter ekstraomganger/straffer",opts,index=opts.index(old) if old in opts else 0,key=f"{prefix}_winner")
     else: w=winner_from_score(a,b,ga,gb,"")
-    return {"team_a":a,"team_b":b,"goals_a":int(ga),"goals_b":int(gb),"winner":w}
-def render_group_inputs(data,key_name,prefix):
+    return {"team_a":a,"team_b":b,"goals_a":int(ga),"goals_b":int(gb),"winner":w,"played":bool(played),"date":current.get("date",""),"status":current.get("status","")}
+def render_group_inputs(data,key_name,prefix,actual_mode=False):
     target=data.setdefault(key_name,{})
     for g in GROUPS:
         with st.expander(f"Gruppe {g}",expanded=g in ["A","B"]):
             for m in [x for x in GROUP_MATCHES if x["group"]==g]:
-                mk=str(m["match_no"]); st.write(f"Kamp {mk}"); target[mk]=score_inputs(f"{prefix}_{key_name}_{mk}",m["team_a"],m["team_b"],normalize_score(target.get(mk)),False)
+                mk=str(m["match_no"]); cur=normalize_score(target.get(mk)); label=f"Kamp {mk}"
+                if actual_mode and cur.get("played"): label += f" ✅ {format_score(cur)}"
+                elif actual_mode: label += " ⏳ ikke rettet"
+                st.write(label); target[mk]=score_inputs(f"{prefix}_{key_name}_{mk}",m["team_a"],m["team_b"],cur,False,actual_mode)
 def render_tables_and_slots(data,prefix):
     q=qualifiers(data.get("group_scores",{})); cols=st.columns(3)
     for i,g in enumerate(GROUPS):
@@ -68,52 +78,59 @@ def render_tables_and_slots(data,prefix):
             val=c3.selectbox("Overstyr",options,index=options.index(old) if old in options else 0,key=f"{prefix}_slot_{slot}",label_visibility="collapsed")
             if val: overrides[slot]=val
             else: overrides.pop(slot,None)
-def render_knockout_inputs(data,key_name,prefix):
+def render_knockout_inputs(data,key_name,prefix,actual_mode=False):
     target=data.setdefault(key_name,{}); br=compute_bracket(data.get("group_scores",{}),data.get("third_slot_overrides",{}),target)
     for phase in PHASE_ORDER:
         st.markdown(f"### {phase}")
         for no,m in sorted([(no,x) for no,x in br.items() if x["phase"]==phase]):
-            st.write(f"Kamp {no}: `{m['seed_a']}` vs `{m['seed_b']}`"); target[str(no)]=score_inputs(f"{prefix}_{key_name}_{no}",m["team_a"],m["team_b"],normalize_score(target.get(str(no))),True)
+            cur=normalize_score(target.get(str(no))); st.write(f"Kamp {no}: `{m['seed_a']}` vs `{m['seed_b']}`")
+            target[str(no)]=score_inputs(f"{prefix}_{key_name}_{no}",m["team_a"],m["team_b"],cur,True,actual_mode)
         br=compute_bracket(data.get("group_scores",{}),data.get("third_slot_overrides",{}),target)
     data["champion"]=br.get(104,{}).get("winner","")
     if data["champion"]: st.success(f"🏆 Mester: {data['champion']}")
+def fetch_api_football_fixtures(api_key):
+    url="https://v3.football.api-sports.io/fixtures"; headers={"x-apisports-key":api_key}; params={"league":1,"season":2026}
+    r=requests.get(url,headers=headers,params=params,timeout=30); r.raise_for_status(); return r.json().get("response",[])
 def participant_mode():
     st.header("Deltaker: lag tippekupong"); import_box("Last inn eksisterende JSON-tippekupong","participant","participant_import")
     data=st.session_state.participant_data; prefix=f"p_{st.session_state.participant_ui_version}"; data["participant"]=st.text_input("Navn",value=data.get("participant",""),key=f"{prefix}_name").strip()
     try_luck_button("Prøv lykken!","participant",f"{prefix}_try_luck")
     if st.session_state.get("play_luck_song",False): show_spotify_player()
     tab1,tab2,tab3,tab4=st.tabs(["1 Gruppespill","2 Tabeller","3 Sluttspill","4 Lagre/eksporter"])
-    with tab1: render_group_inputs(data,"group_scores",prefix)
+    with tab1: render_group_inputs(data,"group_scores",prefix,False)
     with tab2: render_tables_and_slots(data,prefix)
-    with tab3: render_knockout_inputs(data,"knockout_predictions",prefix)
+    with tab3: render_knockout_inputs(data,"knockout_predictions",prefix,False)
     with tab4:
-        if st.button("Lagre lokalt",key=f"{prefix}_save"): save_local(LOCAL_PARTICIPANT_FILE,data); st.success("Lagret lokalt")
         if st.button("Nullstill deltakerdata",key=f"{prefix}_reset"): st.session_state.participant_data=new_prediction(""); st.session_state.participant_ui_version+=1; st.session_state.play_luck_song=False; clear_widget_keys("p_"); st.rerun()
         fname=f"tips_{data.get('participant','deltaker').replace(' ','_')}.json"; st.download_button("Last ned min JSON-tippekupong",download_json(data),fname,"application/json",key=f"{prefix}_download"); st.json(data,expanded=False)
 def admin_mode():
     st.header("Admin: fasit og ledertabell"); import_box("Last inn fasit-JSON","actual","actual_import")
     actual=st.session_state.actual_data; prefix=f"a_{st.session_state.actual_ui_version}"
-    with st.expander("Demo/test",expanded=False): st.warning("Fiktiv demo-fasit"); try_luck_button("Prøv lykken! (demo-fasit)","actual",f"{prefix}_try_luck_actual")
+    with st.expander("API-Football automatisk fasit",expanded=False):
+        st.write("Henter VM 2026 med league=1 og season=2026. Kun kamper med status FT/AET/PEN markeres som spilt.")
+        api_key=st.text_input("API-nøkkel",value=get_secret("API_FOOTBALL_KEY",""),type="password")
+        if st.button("Hent resultater fra API-Football",disabled=not api_key,key=f"{prefix}_api_fetch"):
+            try:
+                fixtures=fetch_api_football_fixtures(api_key); res=apply_api_fixtures(actual,fixtures); st.success(f"Oppdatert: {res['updated']} kamper. Hoppet over: {res['skipped']}"); st.session_state.actual_ui_version+=1; clear_widget_keys("a_"); st.rerun()
+            except Exception as exc: st.error(f"API-feil: {exc}")
     tab1,tab2,tab3,tab4=st.tabs(["1 Fasit gruppespill","2 Fasit sluttspill","3 Importer tips og ledertabell","4 Eksporter fasit"])
-    with tab1: render_group_inputs(actual,"group_scores",prefix); render_tables_and_slots(actual,prefix)
-    with tab2: render_knockout_inputs(actual,"knockout_results",prefix)
+    with tab1: render_group_inputs(actual,"group_scores",prefix,True); render_tables_and_slots(actual,prefix)
+    with tab2: render_knockout_inputs(actual,"knockout_results",prefix,True)
     with tab3:
+        played=sum(1 for m in all_matches_for_scoring(actual,True).values() if m.get("played")); st.info(f"Kamper som rettes nå: {played} av 104")
         uploads=st.file_uploader("Last opp alle deltakernes JSON-filer",type="json",accept_multiple_files=True,key=f"{prefix}_participant_uploads")
         if uploads:
             scored=[]; details={}; raw={}
             for up in uploads:
                 try:
                     pred=load_json_bytes(up); res=score_prediction(pred,actual); p=res["participant"]
-                    scored.append({"Deltaker":p,"Kamppoeng":res["match_points"],"Mesterbonus":res["champion_bonus"],"Totalt":res["total"],"Mestertips":pred.get("champion","")}); details[p]=res["details"]; raw[p]=pred
+                    scored.append({"Deltaker":p,"Kamppoeng":res["match_points"],"Mesterbonus":res["champion_bonus"],"Totalt":res["total"],"Rettede kamper":res["corrected_matches"],"Mestertips":pred.get("champion","")}); details[p]=res["details"]; raw[p]=pred
                 except Exception as exc: st.error(f"Kunne ikke lese {up.name}: {exc}")
             if scored:
                 df=pd.DataFrame(scored).sort_values(["Totalt","Kamppoeng"],ascending=[False,False]).reset_index(drop=True); df.insert(0,"Plass",range(1,len(df)+1)); st.dataframe(df,hide_index=True,use_container_width=True)
                 st.download_button("Last ned ledertabell CSV",df.to_csv(index=False).encode("utf-8"),"ledertabell_vm2026.csv","text/csv",key=f"{prefix}_csv")
                 st.markdown("### Deltakernes valg"); chosen=st.selectbox("Velg deltaker",list(details.keys()),key=f"{prefix}_details_participant")
-                if chosen:
-                    ddf=pd.DataFrame(details[chosen]); st.dataframe(ddf,hide_index=True,use_container_width=True); st.download_button("Last ned detaljer CSV",ddf.to_csv(index=False).encode("utf-8"),f"detaljer_{chosen.replace(' ','_')}.csv","text/csv",key=f"{prefix}_details_csv")
-                with st.expander("Vis alle deltakernes tips"):
-                    for p,rows in details.items(): st.markdown(f"#### {p}"); st.dataframe(pd.DataFrame(rows),hide_index=True,use_container_width=True)
+                if chosen: ddf=pd.DataFrame(details[chosen]); st.dataframe(ddf,hide_index=True,use_container_width=True)
                 with st.expander("Rå JSON per deltaker"):
                     p=st.selectbox("Velg deltaker for rå JSON",list(raw.keys()),key=f"{prefix}_raw_json_participant"); st.json(raw[p],expanded=False)
     with tab4:
