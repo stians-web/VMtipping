@@ -1,18 +1,22 @@
-# VM 2026 tippekonkurranse – v7.1
+# VM 2026 tippekonkurranse – v8
 
-Denne versjonen fikser Streamlit secrets-feilen når ingen `.streamlit/secrets.toml` finnes lokalt.
+## Viktig endring i v8
 
-## Viktig scoring
+Gruppespillet er uendret:
 
-Kun kamper som er markert som **Kamp ferdig/spilt** gir poeng. Ikke-spilte kamper gir 0 poeng, selv om resultatfeltet står på 0–0.
+- 3 poeng for riktig resultat
+- 1 poeng for riktig utfall
 
-## API-Football
+Sluttspillet er gjort mer fleksibelt:
 
-API-nøkkel kan legges inn manuelt i appen, eller som secret på Streamlit Cloud:
+- Hvis begge lagene i en sluttspillkamp stemmer: 4 poeng for riktig resultat, eller 2 poeng for riktig vinner.
+- Hvis bare ett lag stemmer i en sluttspillkamp: opptil 3 poeng.
+  - 1 poeng for riktig lag i kampen
+  - 1 ekstra hvis laget går videre
+  - 1 ekstra hvis antall mål for laget stemmer
+- Ingen progresjonsbonus er lagt til.
 
-```toml
-API_FOOTBALL_KEY = "din_api_nøkkel"
-```
+Resultattabellen inkluderer nå kolonnen **Riktige resultater**.
 
 ## Kjøring
 

@@ -10,7 +10,7 @@ from vm2026_logic import *
 
 st.set_page_config(page_title="VM 2026 tipping", layout="wide")
 st.title("VM 2026 tippekonkurranse")
-st.caption("v7.1: bare spilte kamper rettes + API-Football uten secrets-feil + Spotify")
+st.caption("v8: gruppespill uendret + delvis sluttspilltreff + antall riktige resultater")
 SPOTIFY_EMBED_URL="https://open.spotify.com/embed/track/6z5sjLABC6XkNviIYeFUqF?utm_source=generator"
 def show_spotify_player(): st.markdown("### 🎵 Prøv lykken-sang"); components.iframe(SPOTIFY_EMBED_URL,height=152,scrolling=False)
 DATA_DIR=Path("data"); DATA_DIR.mkdir(exist_ok=True)
@@ -106,6 +106,8 @@ def participant_mode():
 def admin_mode():
     st.header("Admin: fasit og ledertabell"); import_box("Last inn fasit-JSON","actual","actual_import")
     actual=st.session_state.actual_data; prefix=f"a_{st.session_state.actual_ui_version}"
+    with st.expander("Regelendring i v8",expanded=False):
+        st.markdown("""**Gruppespillet er uendret:** 3 poeng for riktig resultat og 1 poeng for riktig utfall.\n\n**Sluttspillet er mer fleksibelt:** Full kampmatch gir 4 poeng for riktig resultat eller 2 poeng for riktig vinner. Hvis bare ett lag stemmer i kampen, kan deltakeren få poeng for riktig lag, at laget går videre og riktig antall mål for laget. Ingen progresjonsbonus er lagt til.""")
     with st.expander("API-Football automatisk fasit",expanded=False):
         st.write("Henter VM 2026 med league=1 og season=2026. Kun kamper med status FT/AET/PEN markeres som spilt.")
         api_key=st.text_input("API-nøkkel",value=get_secret("API_FOOTBALL_KEY",""),type="password")
@@ -124,10 +126,10 @@ def admin_mode():
             for up in uploads:
                 try:
                     pred=load_json_bytes(up); res=score_prediction(pred,actual); p=res["participant"]
-                    scored.append({"Deltaker":p,"Kamppoeng":res["match_points"],"Mesterbonus":res["champion_bonus"],"Totalt":res["total"],"Rettede kamper":res["corrected_matches"],"Mestertips":pred.get("champion","")}); details[p]=res["details"]; raw[p]=pred
+                    scored.append({"Deltaker":p,"Kamppoeng":res["match_points"],"Riktige resultater":res["exact_results"],"Mesterbonus":res["champion_bonus"],"Totalt":res["total"],"Rettede kamper":res["corrected_matches"],"Mestertips":pred.get("champion","")}); details[p]=res["details"]; raw[p]=pred
                 except Exception as exc: st.error(f"Kunne ikke lese {up.name}: {exc}")
             if scored:
-                df=pd.DataFrame(scored).sort_values(["Totalt","Kamppoeng"],ascending=[False,False]).reset_index(drop=True); df.insert(0,"Plass",range(1,len(df)+1)); st.dataframe(df,hide_index=True,use_container_width=True)
+                df=pd.DataFrame(scored).sort_values(["Totalt","Kamppoeng","Riktige resultater"],ascending=[False,False,False]).reset_index(drop=True); df.insert(0,"Plass",range(1,len(df)+1)); st.dataframe(df,hide_index=True,use_container_width=True)
                 st.download_button("Last ned ledertabell CSV",df.to_csv(index=False).encode("utf-8"),"ledertabell_vm2026.csv","text/csv",key=f"{prefix}_csv")
                 st.markdown("### Deltakernes valg"); chosen=st.selectbox("Velg deltaker",list(details.keys()),key=f"{prefix}_details_participant")
                 if chosen: ddf=pd.DataFrame(details[chosen]); st.dataframe(ddf,hide_index=True,use_container_width=True)
@@ -138,5 +140,11 @@ def admin_mode():
         if st.button("Nullstill fasit",key=f"{prefix}_reset_actual"): st.session_state.actual_data=new_actual_results(); st.session_state.actual_ui_version+=1; clear_widget_keys("a_"); st.rerun()
         st.download_button("Last ned fasit-JSON",download_json(actual),"actual_results_vm2026.json","application/json",key=f"{prefix}_download_actual"); st.json(actual,expanded=False)
 init_session(); mode=st.sidebar.radio("Modus",["Deltaker","Admin / fasit og leaderboard"])
-st.sidebar.markdown("### Poeng"); st.sidebar.write(f"Riktig resultat: {POINTS_EXACT_SCORE}"); st.sidebar.write(f"Riktig utfall: {POINTS_OUTCOME}"); st.sidebar.write(f"Mesterbonus: {POINTS_CHAMPION}")
+st.sidebar.markdown("### Poeng")
+st.sidebar.write(f"Gruppespill riktig resultat: {POINTS_EXACT_SCORE}")
+st.sidebar.write(f"Gruppespill riktig utfall: {POINTS_OUTCOME}")
+st.sidebar.write(f"Sluttspill riktig resultat: {POINTS_KO_EXACT_SCORE}")
+st.sidebar.write(f"Sluttspill riktig vinner: {POINTS_KO_WINNER}")
+st.sidebar.write("Sluttspill ett-lagstreff: opptil 3")
+st.sidebar.write(f"Mesterbonus: {POINTS_CHAMPION}")
 participant_mode() if mode=="Deltaker" else admin_mode()
