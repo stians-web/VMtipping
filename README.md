@@ -1,22 +1,22 @@
-# VM 2026 tippekonkurranse – v8
+# VM 2026 tippekonkurranse – v8.1
 
-## Viktig endring i v8
+## Endringer
 
-Gruppespillet er uendret:
+- Sluttspillbracketen er korrigert for kamp 91–94 i åttedelsfinalene.
+- Gruppespillet er uendret: 3 poeng for riktig resultat og 1 poeng for riktig utfall.
+- Sluttspillet beholder fleksibel ett-lag-scoring fra v8.
+- Resultattabellen viser fortsatt **Riktige resultater**.
 
-- 3 poeng for riktig resultat
-- 1 poeng for riktig utfall
+## Korrekt åttedelsoppsett i v8.1
 
-Sluttspillet er gjort mer fleksibelt:
-
-- Hvis begge lagene i en sluttspillkamp stemmer: 4 poeng for riktig resultat, eller 2 poeng for riktig vinner.
-- Hvis bare ett lag stemmer i en sluttspillkamp: opptil 3 poeng.
-  - 1 poeng for riktig lag i kampen
-  - 1 ekstra hvis laget går videre
-  - 1 ekstra hvis antall mål for laget stemmer
-- Ingen progresjonsbonus er lagt til.
-
-Resultattabellen inkluderer nå kolonnen **Riktige resultater**.
+- 89 = vinner 74 vs vinner 77
+- 90 = vinner 73 vs vinner 75
+- 91 = vinner 76 vs vinner 78
+- 92 = vinner 79 vs vinner 80
+- 93 = vinner 83 vs vinner 84
+- 94 = vinner 81 vs vinner 82
+- 95 = vinner 86 vs vinner 88
+- 96 = vinner 85 vs vinner 87
 
 ## Kjøring
 

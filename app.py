@@ -10,7 +10,7 @@ from vm2026_logic import *
 
 st.set_page_config(page_title="VM 2026 tipping", layout="wide")
 st.title("VM 2026 tippekonkurranse")
-st.caption("v8: gruppespill uendret + delvis sluttspilltreff + antall riktige resultater")
+st.caption("v8.1: korrigert sluttspillbracket + delvis sluttspilltreff + antall riktige resultater")
 SPOTIFY_EMBED_URL="https://open.spotify.com/embed/track/6z5sjLABC6XkNviIYeFUqF?utm_source=generator"
 def show_spotify_player(): st.markdown("### 🎵 Prøv lykken-sang"); components.iframe(SPOTIFY_EMBED_URL,height=152,scrolling=False)
 DATA_DIR=Path("data"); DATA_DIR.mkdir(exist_ok=True)
@@ -106,8 +106,8 @@ def participant_mode():
 def admin_mode():
     st.header("Admin: fasit og ledertabell"); import_box("Last inn fasit-JSON","actual","actual_import")
     actual=st.session_state.actual_data; prefix=f"a_{st.session_state.actual_ui_version}"
-    with st.expander("Regelendring i v8",expanded=False):
-        st.markdown("""**Gruppespillet er uendret:** 3 poeng for riktig resultat og 1 poeng for riktig utfall.\n\n**Sluttspillet er mer fleksibelt:** Full kampmatch gir 4 poeng for riktig resultat eller 2 poeng for riktig vinner. Hvis bare ett lag stemmer i kampen, kan deltakeren få poeng for riktig lag, at laget går videre og riktig antall mål for laget. Ingen progresjonsbonus er lagt til.""")
+    with st.expander("Regelendring og bracketfiks i v8.1",expanded=False):
+        st.markdown("""**Gruppespillet er uendret.** Sluttspillet gir fortsatt delvis poeng ved ett-lagstreff, uten progresjonsbonus. I v8.1 er kamp 91–94 i åttedelsfinalene korrigert slik at bracketen følger publisert sluttspilloppsett.""")
     with st.expander("API-Football automatisk fasit",expanded=False):
         st.write("Henter VM 2026 med league=1 og season=2026. Kun kamper med status FT/AET/PEN markeres som spilt.")
         api_key=st.text_input("API-nøkkel",value=get_secret("API_FOOTBALL_KEY",""),type="password")

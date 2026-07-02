@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import Dict, List
 import pandas as pd
 
-SCHEMA_VERSION = "2026-06-22-v8-partial-knockout"
+SCHEMA_VERSION = "2026-07-02-v8-1-correct-bracket"
 POINTS_EXACT_SCORE = 3
 POINTS_OUTCOME = 1
 POINTS_CHAMPION = 5
@@ -32,8 +32,9 @@ GROUPS: Dict[str, List[str]] = {
 }
 PAIRINGS_IDX = [(0,1),(2,3),(3,1),(0,2),(3,0),(1,2)]
 ROUND_OF_32 = [(73,"2A","2B"),(74,"1E","3A/B/C/D/F"),(75,"1F","2C"),(76,"1C","2F"),(77,"1I","3C/D/F/G/H"),(78,"2E","2I"),(79,"1A","3C/E/F/H/I"),(80,"1L","3E/H/I/J/K"),(81,"1D","3B/E/F/I/J"),(82,"1G","3A/E/H/I/J"),(83,"2K","2L"),(84,"1H","2J"),(85,"1B","3E/F/G/I/J"),(86,"1J","2H"),(87,"1K","3D/E/I/J/L"),(88,"2D","2G")]
+# v8.1 correction: Match 91-94 now follow the published bracket order.
 NEXT_ROUNDS = {
-    "Åttedelsfinaler": [(89,74,77),(90,73,75),(91,83,84),(92,81,82),(93,76,78),(94,79,80),(95,86,88),(96,85,87)],
+    "Åttedelsfinaler": [(89,74,77),(90,73,75),(91,76,78),(92,79,80),(93,83,84),(94,81,82),(95,86,88),(96,85,87)],
     "Kvartfinaler": [(97,89,90),(98,93,94),(99,91,92),(100,95,96)],
     "Semifinaler": [(101,97,98),(102,99,100)],
     "Bronsefinale": [(103,101,102)],

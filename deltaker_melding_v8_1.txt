@@ -1,0 +1,9 @@
+Kort melding til deltakerne:
+
+Vi har korrigert sluttspillbracketen i appen slik at åttedelsfinalene følger riktig kampvei. Dette påvirker kamp 91–94 i sluttspillet.
+
+Gruppespillet er fortsatt helt uendret: 3 poeng for riktig resultat og 1 poeng for riktig utfall.
+
+Sluttspillscoringen er fortsatt den fleksible modellen: full kampmatch gir mest poeng, men man kan også få delvis poeng hvis ett lag stemmer i en sluttspillkamp. Det er fortsatt ingen ekstra progresjonsbonus.
+
+Resultattabellen viser også hvor mange kamper hver deltaker har truffet med helt riktig resultat.
